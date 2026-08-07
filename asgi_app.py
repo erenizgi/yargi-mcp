@@ -8,6 +8,7 @@ Usage:
     uvicorn asgi_app:app --host 0.0.0.0 --port 8000
 """
 
+import asyncio
 import datetime
 import os
 import json
@@ -82,23 +83,26 @@ class ToolInfo(BaseModel):
 async def call_mcp_tool(tool_name: str, arguments: Dict[str, Any]):
     """Call an MCP tool with given arguments using official FastMCP API"""
     try:
-        # FastMCP'nin resmi ve güvenli çağırma yöntemi
-        result = await mcp_server.call_tool(tool_name, arguments)
+        result = await asyncio.wait_for(
+            mcp_server.call_tool(tool_name, arguments),
+            timeout=120.0,
+        )
 
-        # Dönüş verisi TextContent listesi ise ham/JSON içeriğini çıkarma
         if isinstance(result, list) and len(result) > 0:
             item = result[0]
             if hasattr(item, "text"):
                 try:
-                    return json.loads(item.text)  # Metin JSON ise dict'e çevirir
+                    return json.loads(item.text)
                 except (json.JSONDecodeError, TypeError):
-                    return item.text  # Düz metin ise metin döner
+                    return item.text
 
         return result
 
+    except asyncio.TimeoutError as exc:
+        logger.error(f"MCP tool '{tool_name}' timed out after 120 seconds")
+        raise HTTPException(status_code=504, detail="MCP tool request timed out") from exc
     except Exception as e:
         error_msg = str(e)
-        # Araç bulunamadı hatasını 404'e çevirme
         if "not found" in error_msg.lower() or "unknown" in error_msg.lower():
             raise HTTPException(
                 status_code=404, detail=f"Tool '{tool_name}' not found"

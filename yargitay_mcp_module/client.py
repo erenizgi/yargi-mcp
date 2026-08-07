@@ -62,9 +62,17 @@ class YargitayOfficialApiClient:
         logger.info(f"YargitayOfficialApiClient: Performing detailed search with payload: {request_payload}")
 
         try:
-            response = await self.http_client.post(self.DETAILED_SEARCH_ENDPOINT, json=request_payload)
+            logger.info("Checkpoint 0: Initializing session with Yargitay API")
+            await self.http_client.get("/")
+            logger.info("Checkpoint 2: Successfully accessed Yargitay base URL for session initialization")
+            response = await self.http_client.post(
+                self.DETAILED_SEARCH_ENDPOINT,
+                json=request_payload,
+                timeout=120.0,
+            )
             response.raise_for_status() # Raise an exception for HTTP 4xx or 5xx status codes
             response_json_data = response.json()
+            logger.info("Checkpoint 1: Received response from Yargitay API")
             
             logger.debug(f"YargitayOfficialApiClient: Raw API response: {response_json_data}")
             
@@ -81,6 +89,7 @@ class YargitayOfficialApiClient:
             
             # Validate and parse the response using Pydantic models
             api_response = YargitayApiSearchResponse(**response_json_data)
+            logger.info(f"YargitayOfficialApiClient: Parsed API response with {len(api_response.data.data)} decision entries, total records: {api_response.data.recordsTotal}")
 
             # Populate the document_url for each decision entry
             if api_response.data and api_response.data.data:

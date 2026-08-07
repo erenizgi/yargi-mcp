@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    container_name: yargi_mcp_backend_app
+    restart: always
+    ports:
+      # Sadece sunucunun kendisine (host) 8005 portunu bağlar
+      - "127.0.0.1:8005:8000"
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8000
+    networks:
+      - law_shared_network
+      
+networks:
+  law_shared_network:
+    external: true
