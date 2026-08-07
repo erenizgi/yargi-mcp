@@ -8,10 +8,15 @@ Usage:
     uvicorn asgi_app:app --host 0.0.0.0 --port 8000
 """
 
+import datetime
 import os
 import json
 import logging
-from fastapi import FastAPI, Request
+import inspect
+from fastapi import FastAPI, HTTPException, Query, Depends, Body, Request, Response
+from pydantic import BaseModel, Field
+from typing import List, Dict, Any, Optional
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
@@ -29,6 +34,7 @@ mcp_server = create_app()
 
 # Create MCP Starlette sub-application
 mcp_app = mcp_server.http_app(path="/")
+SERVER_START_TIME = datetime.datetime.now()
 
 
 # Configure JSON encoder for proper Turkish character support
@@ -68,6 +74,42 @@ app = FastAPI(
     redirect_slashes=False,
 )
 
+class ToolInfo(BaseModel):
+    name: str
+    description: str
+    parameters: Dict[str, Any]
+    
+async def call_mcp_tool(tool_name: str, arguments: Dict[str, Any]):
+    """Call an MCP tool with given arguments using official FastMCP API"""
+    try:
+        # FastMCP'nin resmi ve güvenli çağırma yöntemi
+        result = await mcp_server.call_tool(tool_name, arguments)
+
+        # Dönüş verisi TextContent listesi ise ham/JSON içeriğini çıkarma
+        if isinstance(result, list) and len(result) > 0:
+            item = result[0]
+            if hasattr(item, "text"):
+                try:
+                    return json.loads(item.text)  # Metin JSON ise dict'e çevirir
+                except (json.JSONDecodeError, TypeError):
+                    return item.text  # Düz metin ise metin döner
+
+        return result
+
+    except Exception as e:
+        error_msg = str(e)
+        # Araç bulunamadı hatasını 404'e çevirme
+        if "not found" in error_msg.lower() or "unknown" in error_msg.lower():
+            raise HTTPException(
+                status_code=404, detail=f"Tool '{tool_name}' not found"
+            )
+
+        raise HTTPException(
+            status_code=500, detail=f"Tool execution failed: {error_msg}"
+        )
+
+
+
 
 @app.get("/health")
 async def health_check():
@@ -76,23 +118,192 @@ async def health_check():
         "status": "healthy",
         "service": "Yargı MCP Server",
         "version": "0.1.0",
-        "tools_count": len(mcp_server._tool_manager._tools),
+        "start_time": SERVER_START_TIME.isoformat(),
     }
 
+@app.get("/debug/mcp_attrs")
+async def debug_mcp_attrs():
+    try:
+        tools = await mcp_server.list_tools()
 
+        candidates = []
+        for tool in tools:
+            # Tool nesnesinden ham veri çekme
+            if hasattr(tool, "model_dump"):
+                tool_dict = tool.model_dump()
+            elif hasattr(tool, "dict"):
+                tool_dict = tool.dict()
+            elif hasattr(tool, "__dict__"):
+                tool_dict = vars(tool)
+            else:
+                tool_dict = {"repr": str(tool)}
+
+            candidates.append(tool_dict)
+
+        debug_payload = {
+            "count": len(candidates),
+            "candidates": candidates,
+            "raw_registered_tools": list(mcp_server._tools.keys())
+            if hasattr(mcp_server, "_tools")
+            else [],
+        }
+
+        # default=str parametresi <class 'function'> dahil JSON'a girmeyen her şeyi string yapar
+        json_bytes = json.dumps(debug_payload, default=str, indent=2)
+        return Response(content=json_bytes, media_type="application/json")
+
+    except Exception as e:
+        error_payload = {
+            "error": str(e),
+            "raw_tools_keys": list(mcp_server._tools.keys())
+            if hasattr(mcp_server, "_tools")
+            else [],
+        }
+        return Response(
+            content=json.dumps(error_payload, default=str),
+            media_type="application/json",
+            status_code=500,
+        )
 @app.api_route("/mcp", methods=["GET", "POST", "HEAD", "OPTIONS"])
 async def redirect_to_slash(request: Request):
     """Redirect /mcp to /mcp/ preserving HTTP method with 308"""
     from fastapi.responses import RedirectResponse
     return RedirectResponse(url="/mcp/", status_code=308)
 
+class YargitaySearchRequest(BaseModel):
+    
+    """
+    Search request for Court of Cassation (Yargıtay) decisions using primary official API.
+    
+    The Court of Cassation is Turkey's highest court for civil and criminal matters,
+    equivalent to a Supreme Court. Provides access to comprehensive supreme court precedents.
+    """
+    arananKelime: str = Field(
+        ..., 
+        description="""Keyword to search for with advanced operators:
+        • Space between words = OR logic (arsa payı → "arsa" OR "payı")
+        • "exact phrase" = Exact match ("arsa payı" → exact phrase)
+        • word1+word2 = AND logic (arsa+payı → both words required)
+        • word* = Wildcard (bozma* → bozma, bozması, bozmanın, etc.)
+        • +"phrase1" +"phrase2" = Multiple required phrases
+        • +"required" -"excluded" = Include and exclude
+        
+        Turkish Examples:
+        • Simple OR: arsa payı (~523K results)
+        • Exact phrase: "arsa payı" (~22K results)
+        • Multiple AND: +"arsa payı" +"bozma sebebi" (~234 results)
+        • Wildcard: bozma* (bozma, bozması, bozmanın, etc.)
+        • Exclude: +"arsa payı" -"kira sözleşmesi"
+        """,
+        example='+"mülkiyet hakkı" +"iptal"'
+    )
+    birimYrgKurulDaire: Optional[str] = Field(
+        "", 
+        description="""Chamber/board selection (52 options):
+        Civil Chambers: 1-23. Hukuk Dairesi
+        Criminal Chambers: 1-23. Ceza Dairesi
+        General Assemblies: Hukuk Genel Kurulu, Ceza Genel Kurulu
+        Special Boards: Hukuk/Ceza Daireleri Başkanlar Kurulu, Büyük Genel Kurulu
+        
+        Use "" for ALL chambers or specify exact chamber name.
+        """,
+        example="1. Hukuk Dairesi"
+    )
+    baslangicTarihi: Optional[str] = Field(None, description="Start date (DD.MM.YYYY)", example="01.01.2020")
+    bitisTarihi: Optional[str] = Field(None, description="End date (DD.MM.YYYY)", example="31.12.2024")
+    pageSize: int = Field(20, description="Results per page (1-100)", ge=1, le=100, example=20)
+
+
+@app.post(
+    "/api/yargitay/search", 
+    tags=["Yargıtay"],
+    summary="Search Court of Cassation (Primary API)",
+    description="""Search Turkey's Supreme Court for civil and criminal precedents using advanced operators.
+
+Key Features:
+• Advanced search: AND (+), OR (space), NOT (-), wildcards (*), exact phrases ("")
+• 52 chamber options (23 Civil + 23 Criminal + General Assemblies)
+• Date range filtering • Case/decision number filtering • Pagination
+
+Search Examples:
+• OR search: property share (finds ANY words)
+• Exact phrase: "property share" (finds exact phrase)
+• AND required: +"property share" +"annulment reason"
+• Wildcard: construct* (construction, constructive, etc.)
+• Exclude terms: +"property share" -"construction contract"
+
+Use for supreme court precedent research and legal principle analysis."""
+)
+async def search_yargitay(request: YargitaySearchRequest):
+    """
+    Searches Court of Cassation (Yargıtay) decisions using the primary official API.
+
+    The Court of Cassation (Yargıtay) is Turkey's highest court for civil and criminal matters,
+    equivalent to a Supreme Court. This tool provides access to the most comprehensive database
+    of supreme court precedents with advanced search capabilities and filtering options.
+
+    Key Features:
+    • Advanced search operators (AND, OR, wildcards, exclusions)
+    • Chamber filtering: 52 options (23 Civil (Hukuk) + 23 Criminal (Ceza) + General Assemblies (Genel Kurullar))
+    • Date range filtering with DD.MM.YYYY format
+    • Case number filtering (Case No (Esas No) and Decision No (Karar No))
+    • Pagination support (1-100 results per page)
+    • Multiple sorting options (by case number, decision number, date)
+
+    SEARCH SYNTAX GUIDE:
+    • Words with spaces: OR search ("property share" finds ANY of the words)
+    • "Quotes": Exact phrase search ("property share" finds exact phrase)
+    • Plus sign (+): AND search (property+share requires both words)
+    • Asterisk (*): Wildcard (construct* matches variations)
+    • Minus sign (-): Exclude terms (avoid unwanted results)
+
+    Common Search Patterns:
+    • Simple OR: property share (finds ~523K results)
+    • Exact phrase: "property share" (finds ~22K results)
+    • Multiple required: +"property share" +"annulment reason (bozma sebebi)" (finds ~234 results)
+    • Wildcard expansion: construct* (matches construction, constructive, etc.)
+    • Exclude unwanted: +"property share" -"construction contract"
+
+    Use cases:
+    • Research supreme court precedents and legal principles
+    • Find decisions from specific chambers (Civil (Hukuk) vs Criminal (Ceza))
+    • Search for interpretations of specific legal concepts
+    • Analyze court reasoning on complex legal issues
+    • Track legal developments over time periods
+
+    Returns structured search results with decision metadata. Use get_yargitay_document_markdown()
+    to retrieve full decision texts for detailed analysis.
+    """
+    args = {
+        "arananKelime": request.arananKelime,
+        "birimYrgKurulDaire": request.birimYrgKurulDaire, 
+        "pageSize": request.pageSize
+    }
+    if request.baslangicTarihi:
+        args["baslangicTarihi"] = request.baslangicTarihi
+    if request.bitisTarihi:
+        args["bitisTarihi"] = request.bitisTarihi
+    return await call_mcp_tool("search_yargitay_detailed", args)
 
 @app.get("/")
 async def root():
     """Root endpoint with service information"""
+    public_attrs = []
+    public_methods = []
+
+    for name in dir(mcp_server):
+        if name.startswith("_"):
+            continue
+        value = getattr(mcp_server, name)
+        if callable(value):
+            public_methods.append(name)
+        else:
+            public_attrs.append(name)
+
     return {
         "service": "Yargı MCP Server",
         "description": "MCP server for Turkish legal databases",
+        "start_time": SERVER_START_TIME.isoformat(),
         "endpoints": {
             "mcp": "/mcp",
             "health": "/health",
@@ -116,24 +327,9 @@ async def root():
             "Bedesten API (Multiple courts)",
             "Sigorta Tahkim Komisyonu (Insurance Arbitration Commission)",
         ],
-    }
-
-
-@app.get("/status")
-async def status():
-    """Status endpoint with detailed information"""
-    tools = []
-    for tool in mcp_server._tool_manager._tools.values():
-        tools.append({
-            "name": tool.name,
-            "description": tool.description[:100] + "..." if len(tool.description) > 100 else tool.description
-        })
-
-    return {
-        "status": "operational",
-        "tools": tools,
-        "total_tools": len(tools),
-        "transport": "streamable_http",
+        "mcp_object": str(mcp_server),
+        "public_attributes": public_attrs,
+        "public_methods": public_methods,
     }
 
 

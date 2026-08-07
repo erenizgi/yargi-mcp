@@ -258,6 +258,9 @@ def create_app():
 
 # --- Module Imports ---
 from yargitay_mcp_module.client import YargitayOfficialApiClient
+from yargitay_mcp_module.models import (CompactYargitaySearchResult, YargitayDetailedSearchRequest, CleanYargitayDecisionEntry, YargitayDocumentMarkdown)
+
+
 from bedesten_mcp_module.client import BedestenApiClient, BedestenRateLimited
 from bedesten_mcp_module.models import (
     BedestenSearchRequest, BedestenSearchData,
@@ -402,7 +405,7 @@ KARAR_TURU_ADI_TO_GUID_ENUM_MAP = {
 }
 
 # --- MCP Tools for Yargitay ---
-"""
+
 @app.tool(
     description="Use this when searching Turkish Court of Cassation (Yargıtay) decisions. Supports 52 chamber filtering and advanced operators (+required, -excluded, \"exact phrase\").",
     annotations={
@@ -422,7 +425,7 @@ async def search_yargitay_detailed(
     kararSonSiraNo: str = Field("", description="Ending sequence number for 'Karar No'."),
     baslangicTarihi: str = Field("", description="Start date for decision search (DD.MM.YYYY)."),
     bitisTarihi: str = Field("", description="End date for decision search (DD.MM.YYYY)."),
-    # pageSize: int = Field(10, ge=1, le=10, description="Number of results per page."),
+    pageSize: int = Field(10, ge=1, le=10, description="Number of results per page."),
     pageNumber: int = Field(1, ge=1, description="Page number to retrieve.")
 ) -> CompactYargitaySearchResult:
     # Search Yargıtay decisions using primary API with 52 chamber filtering and advanced operators.
@@ -431,7 +434,6 @@ async def search_yargitay_detailed(
     if birimYrgKurulDaire == "ALL":
         birimYrgKurulDaire = ""
     
-    pageSize = 10  # Default value
     
     search_query = YargitayDetailedSearchRequest(
         arananKelime=arananKelime,
@@ -493,7 +495,7 @@ async def get_yargitay_document_markdown(id: str) -> YargitayDocumentMarkdown:
     except Exception as e:
         logger.exception(f"Error in tool 'get_yargitay_document_markdown'.")
         raise
-"""
+
 
 # --- MCP Tools for Danistay ---
 """

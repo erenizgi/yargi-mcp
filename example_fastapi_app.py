@@ -15,6 +15,7 @@ import json
 
 # Import the main MCP app
 from mcp_server_main import app as mcp_server
+from search_functions.yargitay import router as yargitay_router
 
 # Create MCP ASGI app
 mcp_asgi_app = mcp_server.http_app(path="/mcp")
@@ -101,47 +102,6 @@ async def call_mcp_tool(tool_name: str, arguments: Dict[str, Any]):
 # COMPREHENSIVE REQUEST MODELS WITH FULL MCP DOCUMENTATION
 # ============================================================================
 
-class YargitaySearchRequest(BaseModel):
-    """
-    Search request for Court of Cassation (Yargıtay) decisions using primary official API.
-    
-    The Court of Cassation is Turkey's highest court for civil and criminal matters,
-    equivalent to a Supreme Court. Provides access to comprehensive supreme court precedents.
-    """
-    arananKelime: str = Field(
-        ..., 
-        description="""Keyword to search for with advanced operators:
-        • Space between words = OR logic (arsa payı → "arsa" OR "payı")
-        • "exact phrase" = Exact match ("arsa payı" → exact phrase)
-        • word1+word2 = AND logic (arsa+payı → both words required)
-        • word* = Wildcard (bozma* → bozma, bozması, bozmanın, etc.)
-        • +"phrase1" +"phrase2" = Multiple required phrases
-        • +"required" -"excluded" = Include and exclude
-        
-        Turkish Examples:
-        • Simple OR: arsa payı (~523K results)
-        • Exact phrase: "arsa payı" (~22K results)
-        • Multiple AND: +"arsa payı" +"bozma sebebi" (~234 results)
-        • Wildcard: bozma* (bozma, bozması, bozmanın, etc.)
-        • Exclude: +"arsa payı" -"kira sözleşmesi"
-        """,
-        example='+"mülkiyet hakkı" +"iptal"'
-    )
-    birimYrgKurulDaire: Optional[str] = Field(
-        "", 
-        description="""Chamber/board selection (52 options):
-        Civil Chambers: 1-23. Hukuk Dairesi
-        Criminal Chambers: 1-23. Ceza Dairesi
-        General Assemblies: Hukuk Genel Kurulu, Ceza Genel Kurulu
-        Special Boards: Hukuk/Ceza Daireleri Başkanlar Kurulu, Büyük Genel Kurulu
-        
-        Use "" for ALL chambers or specify exact chamber name.
-        """,
-        example="1. Hukuk Dairesi"
-    )
-    baslangicTarihi: Optional[str] = Field(None, description="Start date (DD.MM.YYYY)", example="01.01.2020")
-    bitisTarihi: Optional[str] = Field(None, description="End date (DD.MM.YYYY)", example="31.12.2024")
-    pageSize: int = Field(20, description="Results per page (1-100)", ge=1, le=100, example=20)
 
 class YargitayBedestenSearchRequest(BaseModel):
     """
@@ -361,6 +321,8 @@ class SayistaySearchRequest(BaseModel):
 # BASIC SERVER ENDPOINTS (keeping from original)
 # ============================================================================
 
+
+'''BURASI TAMAM'''
 @app.get("/", response_model=ServerInfo)
 async def root():
     """Get comprehensive server information with database coverage"""
@@ -384,6 +346,8 @@ async def root():
         api_docs="/docs"
     )
 
+
+'''BURASI TAMAM'''
 @app.get("/health", response_model=HealthCheck)
 async def health_check():
     """Health check with comprehensive system status"""
@@ -395,6 +359,8 @@ async def health_check():
         tools_operational=len(mcp_server._tool_manager._tools) == 33
     )
 
+
+'''BURASI TAMAM'''
 @app.get("/api/tools", response_model=List[ToolInfo])
 async def list_tools(
     search: Optional[str] = Query(None, description="Search tools by name or description"),
