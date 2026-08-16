@@ -3,7 +3,7 @@ import httpx
 
 
 async def test_search():
-    url = "http://127.0.0.1:8005/api/yargitay/search"  # Endpoint URL'niz
+    url = "http://127.0.0.1:8000/api/yargitay/search"  # Endpoint URL'niz
 
     payload = {
         "arananKelime": '+"mülkiyet hakkı" +"iptal"',

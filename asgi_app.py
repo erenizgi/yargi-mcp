@@ -13,6 +13,7 @@ import datetime
 import os
 import json
 import logging
+import httpx
 import inspect
 from fastapi import FastAPI, HTTPException, Query, Depends, Body, Request, Response
 from pydantic import BaseModel, Field
@@ -37,6 +38,14 @@ mcp_server = create_app()
 mcp_app = mcp_server.http_app(path="/")
 SERVER_START_TIME = datetime.datetime.now()
 
+
+async def fetch_documents_sequential(decisions, delay=1.0):
+    documents = []
+    for d in decisions:
+        doc = await fetch_document(d.get("document_url"))
+        documents.append(doc)
+        await asyncio.sleep(delay)
+    return documents
 
 # Configure JSON encoder for proper Turkish character support
 class UTF8JSONResponse(JSONResponse):
@@ -213,11 +222,37 @@ class YargitaySearchRequest(BaseModel):
         """,
         example="1. Hukuk Dairesi"
     )
+    birimYrgHukukDaire: Optional[str] = Field(
+        "",
+        description="""General Assembly selection (2 options):
+        Hukuk Genel Kurulu (Civil General Assembly)
+        Ceza Genel Kurulu (Criminal General Assembly)
+        """,
+        example="Hukuk Genel Kurulu"
+    )
     baslangicTarihi: Optional[str] = Field(None, description="Start date (DD.MM.YYYY)", example="01.01.2020")
     bitisTarihi: Optional[str] = Field(None, description="End date (DD.MM.YYYY)", example="31.12.2024")
     pageSize: int = Field(20, description="Results per page (1-100)", ge=1, le=100, example=20)
+    pageNumber: int = Field(1, description="Page number (1-indexed)", ge=1, example=1)
 
 
+
+
+async def fetch_document(document_url: str) -> str:
+    if not document_url:
+        logger.warning("Document URL is empty or None")
+        return None
+    
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(60.0)) as client:
+            response = await client.get(document_url)
+            return response.text
+    except Exception as e:
+        logger.error(f"Doküman çekilemedi: {document_url} - {e}")
+        return None
+    
+    
+    
 @app.post(
     "/api/yargitay/search", 
     tags=["Yargıtay"],
@@ -280,14 +315,29 @@ async def search_yargitay(request: YargitaySearchRequest):
     """
     args = {
         "arananKelime": request.arananKelime,
-        "birimYrgKurulDaire": request.birimYrgKurulDaire, 
-        "pageSize": request.pageSize
+        "pageSize": request.pageSize,
+        "pageNumber": request.pageNumber
     }
+    logger.info(f"Received Yargıtay search request: {args}")
+    if request.birimYrgHukukDaire:
+        args["birimYrgHukukDaire"] = request.birimYrgHukukDaire
     if request.baslangicTarihi:
         args["baslangicTarihi"] = request.baslangicTarihi
     if request.bitisTarihi:
         args["bitisTarihi"] = request.bitisTarihi
-    return await call_mcp_tool("search_yargitay_detailed", args)
+        
+    response = await call_mcp_tool("search_yargitay_detailed", args)
+    json_response = response.json()
+    json_response = json.loads(json_response) if isinstance(json_response, str) else json_response
+    structured_response = json_response.get("structured_content", {})
+    decisions = structured_response.get("decisions", [])
+    
+    documents = await fetch_documents_sequential(decisions, delay=1.0)    
+    for decision, document in zip(decisions, documents):
+        decision["document"] = document
+        decision.pop("document_url", None)
+        
+    return {"decisions": decisions}
 
 @app.get("/")
 async def root():

@@ -416,7 +416,7 @@ KARAR_TURU_ADI_TO_GUID_ENUM_MAP = {
 )
 async def search_yargitay_detailed(
     arananKelime: str = Field("", description="Turkish search keyword. Supports +required -excluded \"exact phrase\" operators"),
-    birimYrgKurulDaire: str = Field("ALL", description="Chamber selection (52 options: Civil/Criminal chambers, General Assemblies)"),
+    birimYrgKurulDaire: str = Field("", description="Chamber selection (52 options: Civil/Criminal chambers, General Assemblies)"),
     esasYil: str = Field("", description="Case year for 'Esas No'."),
     esasIlkSiraNo: str = Field("", description="Starting sequence number for 'Esas No'."),
     esasSonSiraNo: str = Field("", description="Ending sequence number for 'Esas No'."),
@@ -426,7 +426,8 @@ async def search_yargitay_detailed(
     baslangicTarihi: str = Field("", description="Start date for decision search (DD.MM.YYYY)."),
     bitisTarihi: str = Field("", description="End date for decision search (DD.MM.YYYY)."),
     pageSize: int = Field(10, ge=1, le=10, description="Number of results per page."),
-    pageNumber: int = Field(1, ge=1, description="Page number to retrieve.")
+    pageNumber: int = Field(1, ge=1, description="Page number to retrieve."),
+    birimYrgHukukDaire: Optional[str] = Field("", description="General Assembly selection (Hukuk Genel Kurulu or Ceza Genel Kurulu).")
 ) -> CompactYargitaySearchResult:
     # Search Yargıtay decisions using primary API with 52 chamber filtering and advanced operators.
     
@@ -438,6 +439,7 @@ async def search_yargitay_detailed(
     search_query = YargitayDetailedSearchRequest(
         arananKelime=arananKelime,
         birimYrgKurulDaire=birimYrgKurulDaire,
+        birimYrgHukukDaire=birimYrgHukukDaire,
         esasYil=esasYil,
         esasIlkSiraNo=esasIlkSiraNo,
         esasSonSiraNo=esasSonSiraNo,
