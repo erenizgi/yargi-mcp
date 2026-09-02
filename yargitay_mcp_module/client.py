@@ -75,7 +75,7 @@ class YargitayOfficialApiClient:
             response_json_data = response.json()
             logger.info("Checkpoint 1: Received response from Yargitay API")
             
-            logger.debug(f"YargitayOfficialApiClient: Raw API response: {response_json_data}")
+            logger.info(f"YargitayOfficialApiClient: Raw API response: {response_json_data}")
             
             # Handle None or empty data response from API
             if response_json_data is None:
@@ -91,7 +91,7 @@ class YargitayOfficialApiClient:
             # Validate and parse the response using Pydantic models
             api_response = YargitayApiSearchResponse(**response_json_data)
             logger.info(f"YargitayOfficialApiClient: Parsed API response with {len(api_response.data.data)} decision entries, total records: {api_response.data.recordsTotal}")
-            
+
             # Populate the document_url for each decision entry
             if api_response.data and api_response.data.data:
                 for decision_item in api_response.data.data:
