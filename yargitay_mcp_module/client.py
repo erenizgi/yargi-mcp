@@ -70,6 +70,7 @@ class YargitayOfficialApiClient:
                 json=request_payload,
                 timeout=120.0,
             )
+            logger.info(response)
             response.raise_for_status() # Raise an exception for HTTP 4xx or 5xx status codes
             response_json_data = response.json()
             logger.info("Checkpoint 1: Received response from Yargitay API")

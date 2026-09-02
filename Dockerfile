@@ -13,14 +13,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # pip'i güncelle
 RUN pip install --no-cache-dir --upgrade pip
 
-# Tüm proje dosyalarını (pyproject.toml dahil) kopyala
+# Önce sadece requirements.txt kopyala (layer cache için de iyi olur)
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Şimdi proje dosyalarını kopyala
 COPY . .
 
-# pyproject.toml üzerinden projeyi ve bağımlılıklarını kur
-RUN pip install --no-cache-dir .
+# Kendi paketini bağımlılıkları TEKRAR ÇÖZMEDEN kur
+RUN pip install --no-cache-dir --no-deps .
 
-# Konteyner içi port
 EXPOSE 8000
 
-# Uygulama başlatma komutu
 CMD ["uvicorn", "asgi_app:app", "--host", "0.0.0.0", "--port", "8000"]
