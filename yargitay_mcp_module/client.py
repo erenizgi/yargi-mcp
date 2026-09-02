@@ -91,7 +91,7 @@ class YargitayOfficialApiClient:
             # Validate and parse the response using Pydantic models
             api_response = YargitayApiSearchResponse(**response_json_data)
             logger.info(f"YargitayOfficialApiClient: Parsed API response with {len(api_response.data.data)} decision entries, total records: {api_response.data.recordsTotal}")
-
+            
             # Populate the document_url for each decision entry
             if api_response.data and api_response.data.data:
                 for decision_item in api_response.data.data:

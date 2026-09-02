@@ -246,6 +246,7 @@ async def fetch_document(document_url: str) -> str:
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(60.0)) as client:
             response = await client.get(document_url)
+            logger.info(f"Fetched document from {document_url} with status code {response.status_code}")
             return response.text
     except Exception as e:
         logger.error(f"Doküman çekilemedi: {document_url} - {e}")
@@ -336,8 +337,8 @@ async def search_yargitay(request: YargitaySearchRequest):
     for decision, document in zip(decisions, documents):
         decision["document"] = document
         decision.pop("document_url", None)
-        
-    return {"decisions": decisions}
+    returnVal = {"decisions": decisions}
+    return returnVal
 
 @app.get("/")
 async def root():
