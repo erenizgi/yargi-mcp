@@ -36,7 +36,7 @@ class YargitayDetailedSearchRequest(BaseModel):
     """
     arananKelime: Optional[str] = Field("", description="Turkish keywords (supports +word -word \"phrase\" operators)")
     # Department/Board selection - Complete Court of Cassation chamber hierarchy
-    birimYrgKurulDaire: Optional[str] = Field("ALL", description="Chamber (ALL or specific chamber name)")
+    birimYrgKurulDaire: Optional[str] = Field("", description="Chamber (ALL or specific chamber name)")
     birimYrgHukukDaire: Optional[str] = Field("", description="General Assembly selection (Hukuk Genel Kurulu or Ceza Genel Kurulu)")
     esasYil: Optional[str] = Field("", description="Case year (YYYY)")
     esasIlkSiraNo: Optional[str] = Field("", description="Start case no")
