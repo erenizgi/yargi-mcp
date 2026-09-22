@@ -255,7 +255,125 @@ async def fetch_document(document_url: str) -> str:
 
 
 
+@app.get(
+    "/api/yargitay/fetchYargitayDocument",
+    tags=["Yargıtay"],
+    summary="Fetch raw Yargıtay document HTML by decision number",
+    description="Fetches the raw HTML for a Yargıtay decision using only a decision number string. Returns HTML, not JSON.",
+    response_class=Response,
+)
+async def fetch_yargitay_document(
+    decision_number: str = Query(
+        ...,
+        description="Decision number as a plain string, for example: 2024/1234 or 2024/1234-2",
+        min_length=1,
+        max_length=120,
+    )
+):
+    """Fetch a Yargıtay decision HTML document by decision number string."""
+    if not decision_number or not isinstance(decision_number, str):
+        raise HTTPException(status_code=400, detail="Invalid decision number provided.")
 
+    decision_number = decision_number.strip()
+    if not decision_number:
+        raise HTTPException(status_code=400, detail="Invalid decision number provided.")
+
+    document_url = f"https://karararama.yargitay.gov.tr/getDokuman?id={decision_number}"
+
+    logger.info("Fetching Yargıtay decision HTML for decision_number=%s via %s", decision_number, document_url)
+    html_content = await fetch_document(document_url)
+
+    if not html_content:
+        raise HTTPException(status_code=404, detail="Decision document not found for the provided decision number.")
+
+    return Response(content=html_content, media_type="text/html; charset=utf-8")
+
+
+@app.post(
+    "/api/yargitay/search", 
+    tags=["Yargıtay"],
+    summary="Search Court of Cassation (Primary API)",
+    description="""Search Turkey's Supreme Court for civil and criminal precedents using advanced operators.
+
+Key Features:
+• Advanced search: AND (+), OR (space), NOT (-), wildcards (*), exact phrases ("")
+• 52 chamber options (23 Civil + 23 Criminal + General Assemblies)
+• Date range filtering • Case/decision number filtering • Pagination
+
+Search Examples:
+• OR search: property share (finds ANY words)
+• Exact phrase: "property share" (finds exact phrase)
+• AND required: +"property share" +"annulment reason"
+• Wildcard: construct* (construction, constructive, etc.)
+• Exclude terms: +"property share" -"construction contract"
+
+Use for supreme court precedent research and legal principle analysis."""
+)
+async def search_yargitay(request: YargitaySearchRequest):
+    """
+    Searches Court of Cassation (Yargıtay) decisions using the primary official API.
+
+    The Court of Cassation (Yargıtay) is Turkey's highest court for civil and criminal matters,
+    equivalent to a Supreme Court. This tool provides access to the most comprehensive database
+    of supreme court precedents with advanced search capabilities and filtering options.
+
+    Key Features:
+    • Advanced search operators (AND, OR, wildcards, exclusions)
+    • Chamber filtering: 52 options (23 Civil (Hukuk) + 23 Criminal (Ceza) + General Assemblies (Genel Kurullar))
+    • Date range filtering with DD.MM.YYYY format
+    • Case number filtering (Case No (Esas No) and Decision No (Karar No))
+    • Pagination support (1-100 results per page)
+    • Multiple sorting options (by case number, decision number, date)
+
+    SEARCH SYNTAX GUIDE:
+    • Words with spaces: OR search ("property share" finds ANY of the words)
+    • "Quotes": Exact phrase search ("property share" finds exact phrase)
+    • Plus sign (+): AND search (property+share requires both words)
+    • Asterisk (*): Wildcard (construct* matches variations)
+    • Minus sign (-): Exclude terms (avoid unwanted results)
+
+    Common Search Patterns:
+    • Simple OR: property share (finds ~523K results)
+    • Exact phrase: "property share" (finds ~22K results)
+    • Multiple required: +"property share" +"annulment reason (bozma sebebi)" (finds ~234 results)
+    • Wildcard expansion: construct* (matches construction, constructive, etc.)
+    • Exclude unwanted: +"property share" -"construction contract"
+
+    Use cases:
+    • Research supreme court precedents and legal principles
+    • Find decisions from specific chambers (Civil (Hukuk) vs Criminal (Ceza))
+    • Search for interpretations of specific legal concepts
+    • Analyze court reasoning on complex legal issues
+    • Track legal developments over time periods
+
+    Returns structured search results with decision metadata. Use get_yargitay_document_markdown()
+    to retrieve full decision texts for detailed analysis.
+    """
+    args = {
+        "arananKelime": request.arananKelime,
+        "pageSize": request.pageSize,
+        "pageNumber": request.pageNumber
+    }
+    logger.info(f"Received Yargıtay search request: {args}")
+    if request.birimYrgHukukDaire:
+        args["birimYrgHukukDaire"] = request.birimYrgHukukDaire
+    if request.baslangicTarihi:
+        args["baslangicTarihi"] = request.baslangicTarihi
+    if request.bitisTarihi:
+        args["bitisTarihi"] = request.bitisTarihi
+        
+    response = await call_mcp_tool("search_yargitay_detailed", args)
+    json_response = response.json()
+    json_response = json.loads(json_response) if isinstance(json_response, str) else json_response
+    structured_response = json_response.get("structured_content", {})
+    decisions = structured_response.get("decisions", [])
+    
+    # documents = await fetch_documents_sequential(decisions, delay=1.0)    
+    # for decision, document in zip(decisions, documents):
+    #     decision["document"] = document
+    #     decision.pop("document_url", None)
+    returnVal = {"decisions": decisions}
+    return returnVal
 
 @app.get("/")
 async def root():
